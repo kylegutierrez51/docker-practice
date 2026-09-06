@@ -1,0 +1,181 @@
+====================================================================================
+INTRO
+
+Container - package app with all necessary dependencies and configuration
+
+Containers live in a container repo (private/public -- DockerHub), a special type of storage for them
+
+Before Containers:
+ - My laptop would have to install an exact PostgreSQL version for it to access the Runner
+
+After Containers:
+ - The container is its own isolated OS layer, so you can get the specific version of PostgreSQL
+ - Run one command to fetch the container and start it, installing the app
+ - Run same application with 2 different versions (e.g. Run Deplo on PC and Laptop, both on different branches/commits)
+
+
+====================================================================================
+CONTAINERS
+
+Made up of images -- layers of stacked images on top of each other
+
+Bottom to Top:
+ - Base Image: Provides OS (mostly Linux since it's small), Runtime env, or initial tools app needs to run
+ - Intermediate images that lead up to Application Image
+ - Application image - everything needed to run an app (app code, runtime env, dependencies, configs)
+
+
+When you do a command like: 'docker run postgres:9.6':
+ - It'll take less time if you already have a different version of Postgre since it only downloads layers that actually changed. 
+ - Layers that stay the same do not redownload.
+
+
+2 terms:
+ - Docker Image: 
+     - the actual package (config, postgres version, start script)
+     - artifact that is movable
+
+ - Docker Container:
+     - Pull docker image on local machine
+     - Starts the application
+     - Creates container environment
+     - Port binded to it that talks to app (Postgres, Redis, MongoDB, etc.) running inside of a container
+
+  If it's not running, it's a Docker Image -- an atrtifact lying around
+  If you start and run it on machine, it is a Docker Container
+
+
+====================================================================================
+
+DOCKER VS. VIRTUAL MACHINE
+
+OS kernel - separates applications from hardware, communicates with both.
+ - Applications run on kernel layer
+
+Docker and VMs are both virtualization tools
+
+Docker - virtualizes the application layer. Docker image contains app layer of OS and some other apps installed on top of it and uses kernel of host 
+
+VM - Has application layers and its own kernel, so it virtualizes the complete OS. 
+ - When you download a VM image on your host, it uses its own kernel host.
+
+Docker Images:
+ - Smaller (couple of MBs)
+ - Docker containers start and run much faster
+ - Compatibility: May not be able to run on any other host (e.g. Run Linux-based Docker Image on a Windows host -- may not be compatible with Windows kernel)
+         - Workaround: Docker Toolbox - abstracts kernel to make it possible for your OS host to run different Docker images
+
+VM images 
+ - Bigger (couple of GBs)
+ - Much slower, they have to put OS kernel and applications ontop of it
+ - Compatibility: VM of any OS can run on any other OS host
+
+
+====================================================================================
+
+COMMANDS
+
+docker pull <image>:<tag> - Downloads container image to local machine
+ -- e.g. docker pull redis:5.0.6
+
+
+docker images - shows each image's details
+
+
+
+docker run <image>:<tag> - creates and starts new container from docker image
+ - if requested image is not found locally, Docker pulls it from a remote registry (Docker Hub) before running it
+
+ - docker run redis:4.0 - 'docker pull' and 'docker start' in one command, pulls specific redis version and starts it
+
+ - options (put before <image>): -d (detached mode), -p[HOSTPORT:CONTAINERPORT], --name [name]
+
+ - 'tag' can be set to 'latest'
+
+
+
+docker ps - lists running containers
+ - docker ps -a  -- lists both running and stopped containers
+
+
+docker [start/stop] <container_id> - starts/stops container
+
+
+
+Detached Mode: Runs a container in the background of your terminal, so it executes but doesn't output anything in the current terminal except the Container ID
+ - Purpose is so that you can continue typing other commands in the same terminal
+
+
+
+If you run 2 versions of Redis from separate containers at the same, even if they both use port 6379, it doesn't conflict if they use different OS host ports
+ - 2 containers can listen on the same Port AS LONG as you bind them to 2 different ports on your host machine.
+  - Ex: Container 1 and 2 listen on Port 3000, but on our OS host, Container 1 is on 3000 and Container 2 is on 3001.
+
+    This means you have to make a binding between your PC's port and your Container's port.
+
+            To do that: 
+                1. docker run -p3000:6379 redis
+                    - 3000 -> port of the host
+                    - 6379 -> container port that you're binding to host port (6379 -> 3000)
+                
+                2. docker run -p3001:6379 redis:4.0
+                   - If you did: docker run -p 3000:6379 redis:4.0 then docker sends an error
+                
+                docker ps - shows the binding
+
+
+====================================================================================
+
+TROUBLESHOOTING COMMANDS
+
+docker logs [<container_id>/<container_name>] /bin/bash
+
+docker exec -it [<container_id>/<container_name>]
+ - get terminal of running container
+ - 'it' stands for interactive terminal
+ - this takes you inside the container, allowing you to navigate through the container's virtual file system
+ - you can do simple commands like: 'ls', 'pwd', 'env', 'cd /', 'exit', etc.
+ 
+ ====================================================================================
+
+DOCKERS IN SOFTWARE DEV
+
+Docker Network - isolated network where containers run in.
+ - When you deploy 2 containers in same Docker Network, they can talk to each other JUST by using the container name (no port, localhost, etc.)
+
+In the app, node.js (runs outside Docker Network) connects to those containers from outside (from your OS host) using localhost and port number.
+
+
+
+docker network ls
+
+docker network create <name>
+
+
+
+Setup:
+    mongo:
+        docker run -d -p 27017:27017 -e MONGO_INITDB_ROOT_USERNAME=mongoadmin -e MONGO_INITDB_ROOT_PASSWORD=secret. --name mongodb --net mongo-network mongo
+
+    mongo-express:
+        docker run -d \
+            -p 8081:8081 \
+            -e ME_CONFIG_MONGODB_ADMINUSERNAME=mongodb \
+            -e ME_CONFIG_MONGODB_ADMINPASSWORD=secret \
+            --net mongo-network \
+            --name mongo-express \
+            -e ME_CONFIG_MONGODB_SERVER=mongodb \
+            mongo-express
+
+        docker run -d -p8081:8081 -e ME_CONFIG_MONGODB_ADMINUSERNAME=mongoadmin -e ME_CONFIG_MONGODB_ADMINPASSWORD=secret. --net mongo-network --name mongo-express -e ME_CONFIG_MONGODB_SERVER=mongodb mongo-express 
+
+
+            the network has to be 'mongo-network', matching that of the created docker newtwork 'mongo-network' (docker network create mongo-network) so that mongo-express and mongodb can communicate
+
+            also, ADMIN[USERNAME/PASSWORD] are same as MONGO_INITDB_ROOT_[USERNAME/PASSWORD]
+
+            
+
+on localhost:8081, login using ME_CONFIG_BASICAUTH_[USERNAME/PASSWORD] -- (admin, pass)
+
+The ADMIN[USERNAME/PASSWORD] are used internally by mongo-express to talk to the mongo container.
