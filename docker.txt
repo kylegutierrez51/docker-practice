@@ -136,7 +136,7 @@ docker exec -it [<container_id>/<container_name>]
  - this takes you inside the container, allowing you to navigate through the container's virtual file system
  - you can do simple commands like: 'ls', 'pwd', 'env', 'cd /', 'exit', etc.
  
- ====================================================================================
+====================================================================================
 
 DOCKERS IN SOFTWARE DEV
 
@@ -179,3 +179,123 @@ Setup:
 on localhost:8081, login using ME_CONFIG_BASICAUTH_[USERNAME/PASSWORD] -- (admin, pass)
 
 The ADMIN[USERNAME/PASSWORD] are used internally by mongo-express to talk to the mongo container.
+
+====================================================================================
+
+DOCKER COMPOSE 
+
+Annoying:
+        docker run -d \
+            -p 8081:8081 \
+            -e ME_CONFIG_MONGODB_ADMINUSERNAME=mongodb \
+            -e ME_CONFIG_MONGODB_ADMINPASSWORD=secret \
+            --net mongo-network \
+            --name mongo-express \
+            -e ME_CONFIG_MONGODB_SERVER=mongodb \
+            mongo-express
+
+Better:
+    A docker-compose.yaml file that can run those commands for you
+
+    Networks (docker network create <name>) takes care of creating a common Network, so it doesn't have to be specified in docker-compose.yaml
+
+
+docker-compose -f docker-compose.yaml up
+        -f : file
+        up: start all containers in .yaml
+
+        
+        this created a network called 'docker-practice_default' and ran the 2 containers ('docker-practice-mongodb-1', 'docker-practice-mongo-express-1)
+
+        you can do: 'docker network ls' to see the new network
+
+
+        Once the command runs, logs of both containers mix since they start at the same time
+
+
+In Docker Compose, if one container depends on another one, you can configure waiting logic
+
+
+When you restart a container, everything you configure in that container's application is gone
+ - No data persistence in containers
+ - Use docker volumes for data persistence
+
+
+
+docker-compose down -v
+    stops and removes all containers in .yaml AND the created network
+
+    -v : deletes named volume, meaning data in mongo container is lost 
+          - useful if, for ex, you run docker-compose.yaml and realize you forgot to set up the env variables from .env properly
+
+    the next time you run 'docker-compose up', it recreates the network 
+
+
+    If you ran docker-compose.yaml with volumes and attempt to comment out the volumes to delete data, it won't work since docker-compose up copies over volumes from old container instances.
+
+    to remove a volume (excluding -v as that won't work if the volumes were commented out):
+
+    docker compose down
+    docker volume rm <name>
+
+
+====================================================================================
+
+DOCKERFILE
+
+Blueprint for creating docker images
+
+Process:
+    1. Create a docker image via Dockerfile (docker build -t <image_name>)
+    2. Create the container for that image (docker run <image_name>)
+
+
+The first line is:
+'FROM <image>'
+
+
+"RUN mkdir -p /home/app" -- execute linux commands
+    This directory is created INSIDE of the container
+    executes in the CONTAINER
+
+"COPY ./app /home/app" 
+    copy files you have on your OS Host (in ./app) inside this image (into /home/app)
+    executes on the HOST machine
+    
+
+CMD ["node", "server.js"]
+    Executes an entrypoint Linux command
+    this translates to "node server.js"
+    Allows for multiple RUN commands
+
+
+Hardcoding 'ENV' credentials into Dockerfile is unsafe since anything set with it gets baked into the image layers permanently, so anyone who gets access to the Docker image can see them easily.
+
+just inject the .env vars at buildtime instead:
+        docker build -t my-app .
+        docker run --env-file .env -p 3000:3000 my-app
+
+
+docker build -t <name>:<tag> .
+
+    -t gives a name and tag
+    . - location of Dockerfile. Since we're in the same directory as the dockerfile, use "."
+
+
+        docker build -t my-app:1.0 .
+
+
+When you readjust Dockerfile, you MUST rebuild the image.
+
+
+to remove and rebuild the Dockerfile:
+
+docker stop <container_id>
+docker rm <container_id>
+docker rmi <container_id> -- removes the image
+docker images -- view the images
+docker build -t <name>:<tag> .
+
+
+docker exec -it <container_id> /bin/sh 
+    shows current logs for that container
