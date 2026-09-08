@@ -25,7 +25,7 @@ app.get('/profile-picture', function (req, res) {
 let mongoUrlLocal = `mongodb://${process.env.MONGODB_USERNAME}:${process.env.MONGODB_PASSWORD}@localhost:27017`;
 
 // use when starting application as docker container
-let mongoUrlDocker = `mongodb://${process.env.MONGODB_USERNAME}:${process.env.MONGODB_PASSWORD}@mongodb`;
+let mongoUrlDocker = `mongodb://${process.env.MONGODB_USERNAME}:${process.env.MONGODB_PASSWORD}@mongodb`; // @mongodb is name of service in docker-compose.yaml
 
 // pass these options to mongo client connect request to avoid DeprecationWarning for current Server Discovery and Monitoring engine
 let mongoClientOptions = { useNewUrlParser: true, useUnifiedTopology: true };

@@ -299,3 +299,243 @@ docker build -t <name>:<tag> .
 
 docker exec -it <container_id> /bin/sh 
     shows current logs for that container
+
+====================================================================================
+
+PRIVATE DOCKER REGISTRY (REPOSITORY)
+
+Amazon ECR - Store different tags (versions) of the same image
+
+
+to push an image into a private repo:
+ 1. login to that private repo to authenticate yourself (docker login <command>)
+        - the 'command' is given by AWS ECR, and requires AWS CLI installed and credentials configured for it
+
+ 2. docker build -t <name>:<tag>
+
+ 3. tag the image, so that it can be pushed to AWS ECR
+       - docker tag <local_image>:<local_image_tag> registryDomain/<remote_image>:<remote_image_tag>
+
+       'docker tag' creates a new reference to an existing Docker Image.
+       It's used here to match the image in AWS ECR, so that we can push it there easily
+        then do 'docker images' to see the image
+
+ 4. docker push registryDomain/<image>:<tag>
+
+
+
+
+Image Naming in Docker registries:
+
+        'registryDomain/imageName:tag'
+
+        registryDomain - host, port, etc.
+
+
+        When we pull an image out of DockerHub (docker pull), we are able to pull an image with a shorthand, which is why 'registryDomain' doesn't show
+
+         - In Docker, when we do: 'docker pull mongo:4.2' (or docker push mongo:4.2)
+            - it's equal to 'docker pull docker.io/library/mongo:4.2', where 'docker.io/library' is the domainRegistry
+
+            - It assumes we are pulling (or pushing) from DockerHub
+
+         - In AWS ECR, you have to include the full domainRegistry, which is a really long string.
+
+
+
+If you make changes to your Dockerfile or code inside container and update it on AWS ECR:
+ 1. Rebuild image -- docker build -t <image>:<tag>
+
+ 2. Create new reference to that built image in step 1 -- docker tag <local_image>:<local_image_tag> registryDomain/<remote_image>:<remote_image_tag>
+
+ 3. docker push registryDomain/<image>:<tag>
+
+
+
+
+
+Process:
+ 1. Get Image from DockerHub 
+ 2. commit docker-compose.yaml and Dockerfile to Git
+ 3. Jenkins or GitHub Actions CI pushes them to Docker Repo (AWS ECR)
+ 4. Pull the image from AWS ECR to use in dev server
+
+====================================================================================
+
+DEPLOYING CONTAINERIZED APP
+
+In Dockerfile, 
+
+  mongodb:
+    image: mongo
+
+is a shortcut for 'docker.io/library/mongo', but remember that it's shortened to 'mongo' since Docker we're pulling it from DockerHub and 'docker.io/library' is the domain registry of DockerHub.
+
+
+The commented out lines:
+
+"
+  # my-app:
+  # image: ${docker-registry}/my-app:1.0
+"
+
+come from AWS ECR.
+
+The server needs to login to pull from a private repo
+
+====================================================================================
+
+DOCKER VOLUMES
+
+Data persistence. 
+When you stop/restart a container, the data in the virtual file system of the container gets deleted.
+
+Host - Physical File System
+Volumes plug the physical file system path (folder/directory) and plug it into the container's virtual file system path
+
+
+
+3 Volume Types:
+
+1. Host/bind Volumes
+
+    'docker run -v /home/mount/data:/var/lib/mysql/data
+
+    '/home/mount/data' -- host volume : you decide where on the host file system the reference is made
+    '/var/lib/mysql/data' -- container volume
+
+
+2. Anonymous Volumes - no reference to container directory
+
+    'docker run -v /var/lib/mysql/data' 
+
+    creates a volume just by referencing the container directory. No host directory specified -- Docker takes care of it.
+
+    Docker creates the volume with a random hash as its name, so it can be easy to lose track of.
+
+
+3. Named Volumes - specifies name of the folder on the host file system -- FIXES issue with anonymous volumes
+
+    'docker run -v name:/var/lib/mysql/data'
+
+    Unlike anonymous volumes, you can reference the volume by name, without knowing the path
+
+    !! These are the ones you should be using in production
+
+
+A named/anonymous volume can be declared by the image itself (via VOLUME in Dockerfile)
+
+
+
+
+docker-compose.yaml:
+
+            mongodb:
+                image: mongo
+                ports:
+                  - 27017:27017
+                environment:
+                  - MONGO_INITDB_ROOT_USERNAME=${MONGODB_USERNAME}
+                  - MONGO_INITDB_ROOT_PASSWORD=${MONGODB_PASSWORD}
+                volumes:
+                  - mongo-data:/data/db
+
+
+
+            volumes:
+                mongo-data:
+                    driver: local
+
+
+'mongo-data' is the volume name 
+'data/db' is the path inside the mongo container where MongoDB stores its database files
+
+
+even if these 2 lines:
+        volumes:
+            - mongo-data:/data/db
+
+werern't there, Mongo's container would still end up with a volume mounted at /data/db as an anonymous volume Docker generates automatically with a random hash name. 
+
+The benefit of having those 2 lines is that you can control the name of the volume (docker volume inspect docker-practice_mongo-data) instead of getting a random anonymous one
+
+
+
+Volume Location:
+On Windows:
+ - C:/ProgramData/docker/volumes -- native Windows containers
+
+Docker Desktop runs a hidden Linux VM (WSL2 by default) that keeps the Docker daemon and volumes inside that VM's virtual disk
+ - Since mongo, mongo-express, and node:13-alpine are Linux images, the path is '/var/lib/docker/volumes/...' inside the VM.
+ - To access it (on WSL2 backend, which is the default in Docker Desktop):
+
+            Open a terminal into Docker's own WSL distry and browse via these commands:
+
+            wsl -d docker-desktop
+            ls /var/lib/docker/volumes/docker-practice_mongo-data/_data
+
+
+
+====================================================================================
+
+EXTRAS
+
+Sequence:
+
+ 1. Start Docker Desktop
+ 2. Confirm no leftover strandalone containers are holding ports you'll need
+
+        docker ps -a
+        docker rm -f mongodb mongo-express   # only if these standalone ones still exist
+
+ 3. docker-compose --build 
+
+        builds 'my-app' from Dockerfile, pulls mongo/mongo-express, and starts all 3 on an auto-created network (docker-practice_default) so mongodb resolves by service name exactly as mongoUrlDocker in server.js expects
+
+        Equivalent to:
+            docker build -t docker-practice-my-app .
+            docker-compose up
+
+        Subsequent 'docker-compose up' (w/ no --build) will reuse the cached image and won't pick up changes to Dockerfile, app/server.js, etc. 
+          -- You'd need to rerun 'docker build -t docker-practice-my-app' or use 'docker-compose up --build'
+
+        
+ 4. Verify the app (port 3000) and mongo-express UI (8080 -- login: admin / pass)
+
+ 5. Shutdown: docker-compose down 
+
+        Add -v if you want to wipe the mongo-data volume too
+
+
+
+
+
+
+
+docker-compose.yaml:
+
+  my-app:
+    build: .
+    ports:
+      - 3000:3000
+    env_file:
+      - .env
+    depends_on:
+      - mongodb
+
+
+my-app: declares a service named 'my-app' 
+
+build: . -- instead of pulling a pre-built image (like mongo and mongo-express), build the image from a Dockerfile in this directory (docker-compose.yaml and Dockerfile are in same directory)
+
+ports: - 3000:3000 -- publishes container port to host port 3000, so https://localhost:3000 on Windows machine reaches it.
+
+env_file: - .env -- loads every KEY=value line from the root.env file directly into the container's env variables
+ - This populates 'process.env' in server.js
+
+depends_on: - mongodb -- tells compose to start the 'mongodb' container before starting 'my-app'
+ - this waits for the container process to launch, not for Mongo to finish initializing and accepting connections
+ - This means if you go to port 3000, you'll see 'ECONNREFUSED' initially
+
+
+
